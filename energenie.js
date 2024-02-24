@@ -49,6 +49,11 @@ var ener314rt = require('energenie-ener314rt');
 process.on('message', msg => {
     log.verbose("energenie","cmd: %j", msg);
     switch (msg.cmd) {
+        case 'init':
+        case 'reset':
+            // Normally we initialise automatically anyway, this is a forced reset
+            process.send({ cmd: "initialised" })
+            break;
         case 'send':
             // Check xmit times (advanced), 26ms per payload transmission
             var xmits = Number(msg.repeat) || 20;
@@ -101,7 +106,7 @@ process.on('message', msg => {
                             // Invoke C function to do the send
                             if (initialised){
                                 var res = ener314rt.openThingsSwitch(productId, deviceId, switchState, xmits);
-                                log.verbose("energenie", "openThingsSwitch(%d,%d,%j,%d) returned %j",productId, deviceId, switchState, xmits, res);// monitoring loop should respond for us
+                                log.verbose("energenie", "openThingsSwitch(%d,%d,%j,%d) returned $j",productId, deviceId, switchState, xmits, res);// monitoring loop should respond for us
                             } else {
                                 log.verbose('emulator',"simulate calling openThingsSwitch(%d,%d,%j,%d)",productId, deviceId, switchState, xmits);
                                 // for emulation mode we need to respond, otherwise monitoring loop will do it for us
@@ -109,15 +114,6 @@ process.on('message', msg => {
                                 msg.state = switchState;
                                 process.send(msg);                                
                             }                     
-
-                            break;
-                        case MIHO069:  //Thermostat
-                            if (initialised){
-                                log.warn("energenie", "unable to send immediate command to thermostat, use cacheCmd instead");
-                            } else {
-                                log.verbose('emulator',"not implemented for thermostat");
-                                // for emulation mode we need to respond, otherwise monitoring loop will do it for us                           
-                            }            
 
                             break;
                         case MIHO013:  //eTRV
@@ -157,23 +153,21 @@ process.on('message', msg => {
             ener314rt.closeEner314rt();
             process.exit(0);
         case 'cacheCmd':
-            // Queue a cached command (usually for eTRV or Thermostat)
+            // Queue a cached command (usually for eTRV)
             if (msg.data === undefined || msg.data === null){
                 msg.data = 0;
             }
-            if (msg.retries === undefined || msg.retries === null){
-                msg.retries = 10;
-            }
-            var res = ener314rt.openThingsCacheCmd(msg.productId, msg.deviceId, msg.otCommand, msg.data, msg.retries);
+            var res = ener314rt.openThingsCacheCmd(msg.deviceId, msg.otCommand, msg.data);
             if (res == 0){
                 // Notify caching or cancel succesful
-                if (msg.otCommand <= 0){
-                    // cancel
+                if (msg.otCommand > 0){
+                    msg.retries = 10;
+                } else {
                     msg.retries = 0;
                 }
                 process.send(msg);
             }
-            log.verbose("energenie","cached deviceId=%d, cmd=%j, data=%j, retries=%d, res=%d", msg.deviceId, msg.otCommand, msg.data, msg.retries, res);
+            log.verbose("energenie","cached cmd=%j, res=%d", msg.otCommand, res);
             break;
         case 'discovery':
             // Update the MQTT discovery topics after requesting devicelist
